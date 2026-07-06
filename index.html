@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>NextLive — Phase 0 / BPM検出リグ</title>
+<style>
+  :root {
+    --bg:#101114; --panel:#191b20; --panel-2:#1f2228; --line:#2c3039;
+    --ink:#e8e6e1; --ink-dim:#8a8f99; --amber:#ffb454; --amber-deep:#ff9f2e;
+    --cyan:#4fd6e0; --ok:#6fd394; --warn:#ff5d5d;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+  html,body{height:100%;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"Hiragino Sans",sans-serif;overscroll-behavior:none;}
+  body{display:flex;flex-direction:column;padding:max(8px,env(safe-area-inset-top)) 10px max(8px,env(safe-area-inset-bottom));gap:8px;user-select:none;-webkit-user-select:none;}
+  .row{display:flex;gap:8px;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;}
+  .label{font-size:10px;letter-spacing:.16em;color:var(--ink-dim);text-transform:uppercase;margin-bottom:4px;}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+
+  header{display:flex;align-items:baseline;justify-content:space-between;}
+  header h1{font-size:12px;letter-spacing:.2em;font-weight:600;}
+  header h1 em{color:var(--amber);font-style:normal;}
+  #clock{font-family:var(--mono);font-size:11px;color:var(--ink-dim);}
+
+  /* ── マイク検出パネル(主役) ── */
+  #listen{border:1px solid #2a4d52;background:linear-gradient(180deg,#12232620,#191b20);}
+  #listen .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  #detBpm{font-family:var(--mono);font-size:58px;font-weight:800;line-height:.95;color:var(--cyan);text-align:center;}
+  #detBpm.locked{color:var(--ok);text-shadow:0 0 22px rgba(111,211,148,.35);}
+  #detBpm.idle{color:var(--ink-dim);}
+  #detBpm small{display:block;font-size:11px;letter-spacing:.2em;color:var(--ink-dim);font-weight:400;margin-top:2px;}
+  #detStat{font-size:11px;color:var(--ink-dim);text-align:center;min-height:15px;}
+  .bar{height:6px;background:#0c0d10;border-radius:3px;overflow:hidden;margin-top:5px;}
+  .bar > i{display:block;height:100%;width:0;background:var(--cyan);transition:width 90ms;}
+  #confBar > i{background:linear-gradient(90deg,var(--warn),var(--amber),var(--ok));}
+  .listenBtns{display:flex;gap:8px;margin-top:8px;}
+  button.hw{background:var(--panel-2);color:var(--ink);border:1px solid var(--line);
+    border-bottom:3px solid #0a0b0d;border-radius:8px;font-family:var(--mono);font-size:15px;
+    font-weight:600;padding:13px 0;cursor:pointer;flex:1;}
+  button.hw:active{transform:translateY(2px);border-bottom-width:1px;background:#262a32;}
+  button.hw.cyan{color:var(--cyan);border-color:#2a4d52;}
+  button.hw.cyan.on{background:#13282b;}
+  button.hw.amber{color:var(--amber);border-color:#4d3a1e;}
+
+  /* ── トランスポート ── */
+  #transport{flex:1;display:flex;flex-direction:column;gap:6px;}
+  #bpmRead{font-family:var(--mono);font-size:34px;font-weight:700;line-height:1;text-align:center;color:var(--amber);}
+  #bpmRead small{font-size:10px;color:var(--ink-dim);font-weight:400;display:block;letter-spacing:.15em;}
+  .btnrow{display:flex;gap:6px;}
+  #playBtn{letter-spacing:.15em;}
+  #playBtn.on{color:var(--ok);border-color:#2c4d3a;}
+  #beats{display:flex;gap:7px;justify-content:center;padding:3px 0;}
+  .dot{width:13px;height:13px;border-radius:50%;background:#2c3039;transition:background 60ms;}
+  .dot.hit{background:var(--amber);box-shadow:0 0 12px rgba(255,180,84,.5);}
+  .dot.one.hit{background:var(--warn);box-shadow:0 0 12px rgba(255,93,93,.5);}
+
+  /* ── 巨大TAP ── */
+  #tapPad{flex:1;min-height:120px;border-radius:12px;border:1px solid #4d3a1e;
+    background:radial-gradient(circle at 50% 45%,#241d12,#17140e 70%);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;position:relative;}
+  #tapPad .big{font-size:30px;font-weight:800;letter-spacing:.3em;color:var(--amber-deep);}
+  #tapPad .sub{font-size:10px;letter-spacing:.15em;color:var(--ink-dim);margin-top:5px;text-align:center;}
+  #tapPad:active{background:radial-gradient(circle at 50% 45%,#4d3a1e,#241d12 70%);}
+  #tapPad .ring{position:absolute;inset:0;border-radius:12px;border:3px solid transparent;pointer-events:none;}
+  #tapPad .ring.flash{border-color:var(--amber);}
+
+  #nudge .btnrow button{font-size:13px;padding:13px 0;}
+  #meters{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+  .meter{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 9px;}
+  .meter .val{font-family:var(--mono);font-size:15px;font-weight:700;}
+  .meter .val.ok{color:var(--ok);} .meter .val.bad{color:var(--warn);}
+  #log{font-family:var(--mono);font-size:10px;color:var(--ink-dim);max-height:52px;overflow-y:auto;white-space:pre-wrap;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>NEXTLIVE <em>/ BPM検出リグ</em></h1>
+  <div id="clock" class="mono">RUN 00:00:00</div>
+</header>
+
+<!-- ── 主役: マイク自動BPM検出 ── -->
+<div class="panel" id="listen">
+  <div class="head">
+    <div class="label" style="margin:0;">🎙 マイク自動検出（レコード想定）</div>
+    <div class="label mono" style="margin:0;">入力 <span id="micLvl">--</span></div>
+  </div>
+  <div id="detBpm" class="idle">---<small>DETECTED BPM</small></div>
+  <div class="bar"><i id="lvlBar"></i></div>
+  <div id="detStat">停止中 — 「聴く」を押してマイクを開始</div>
+  <div class="label" style="margin:8px 0 2px;">確信度</div>
+  <div class="bar" id="confBar"><i></i></div>
+  <div class="listenBtns">
+    <button class="hw cyan" id="fileBtn">🎵 曲を読み込んで検出（プレビュー可）</button>
+  </div>
+  <div class="listenBtns">
+    <button class="hw cyan" id="listenBtn">🎙 マイク（要ホスト）</button>
+    <button class="hw amber" id="pushBtn">→ マスターへ送る</button>
+  </div>
+  <input type="file" id="fileIn" accept="audio/*" style="display:none">
+</div>
+
+<div class="row" style="flex:1;min-height:0;">
+  <div class="panel" id="transport">
+    <div class="label">Master Tempo</div>
+    <div id="bpmRead">124.0<small>BPM</small></div>
+    <div class="btnrow">
+      <button class="hw" id="bpmDown">−0.1</button>
+      <button class="hw" id="bpmUp">＋0.1</button>
+    </div>
+    <div id="beats"><div class="dot one" id="d0"></div><div class="dot" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div></div>
+    <button class="hw amber" id="playBtn">▶ START</button>
+  </div>
+  <div id="tapPad">
+    <div class="ring" id="ring"></div>
+    <div class="big">TAP</div>
+    <div class="sub">小節頭リセット<br>／レイテンシ計測</div>
+  </div>
+</div>
+
+<div class="panel" id="nudge" style="padding:8px 11px;">
+  <div class="label">Nudge — 位相の微調整</div>
+  <div class="btnrow">
+    <button class="hw" data-n="-23">≪ −23ms</button>
+    <button class="hw" data-n="-5">‹ −5</button>
+    <button class="hw" data-n="5">＋5 ›</button>
+    <button class="hw" data-n="23">＋23ms ≫</button>
+  </div>
+</div>
+
+<div id="meters">
+  <div class="meter"><div class="label">出力レイテンシ</div><div class="val mono" id="mLat">—</div></div>
+  <div class="meter"><div class="label">TAP→発音</div><div class="val mono" id="mTap">—</div></div>
+  <div class="meter"><div class="label">ドロップ</div><div class="val mono ok" id="mDrop">0</div></div>
+</div>
+
+<div class="panel"><div id="log">[待機] 「聴く」でマイク検出 / 「START」で内部ループ再生</div></div>
+
+<script>
+'use strict';
+// ══════════════════════════════════════════════
+// NextLive Phase 0 — マイクBPM自動検出リグ
+//  1) getUserMedia(エコキャン/ノイズ抑制OFF が必須)
+//  2) 低域(キック帯)にバンドパス → エネルギーフラックスで包絡線
+//  3) 包絡線の自己相関でテンポ周期を推定 → BPM(オクターブ補正)
+// ══════════════════════════════════════════════
+let ctx=null, playing=false, bpm=124.0, beat=0, nextNoteTime=0;
+const LOOKAHEAD=0.12, TICK=25; let timerId=null,lastTick=0,dropCount=0,startWall=0,drawQueue=[];
+const $=id=>document.getElementById(id);
+const log=m=>{const e=$('log');e.textContent=`[${new Date().toLocaleTimeString()}] ${m}\n`+e.textContent.slice(0,2000);};
+const spb=()=>60/bpm;
+
+// ── シンセ音源 ──
+function kick(t){const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.setValueAtTime(150,t);o.frequency.exponentialRampToValueAtTime(45,t+.11);g.gain.setValueAtTime(.9,t);g.gain.exponentialRampToValueAtTime(.001,t+.28);o.connect(g).connect(ctx.destination);o.start(t);o.stop(t+.3);}
+let nb=null;function hat(t,open){if(!nb){nb=ctx.createBuffer(1,ctx.sampleRate*.2,ctx.sampleRate);const d=nb.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;}const s=ctx.createBufferSource();s.buffer=nb;const f=ctx.createBiquadFilter();f.type='highpass';f.frequency.value=8000;const g=ctx.createGain();g.gain.setValueAtTime(open?.3:.22,t);g.gain.exponentialRampToValueAtTime(.001,t+(open?.18:.05));s.connect(f).connect(g).connect(ctx.destination);s.start(t);s.stop(t+.2);}
+function click(t){const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=2000;g.gain.setValueAtTime(.5,t);g.gain.exponentialRampToValueAtTime(.001,t+.03);o.connect(g).connect(ctx.destination);o.start(t);o.stop(t+.04);}
+
+// ── スケジューラ ──
+function scheduler(){
+  const now=performance.now();
+  if(lastTick&&now-lastTick>TICK*4){dropCount++;$('mDrop').textContent=dropCount;$('mDrop').className='val mono bad';log(`スケジューラ遅延 ${(now-lastTick).toFixed(0)}ms`);}
+  lastTick=now;
+  while(nextNoteTime<ctx.currentTime+LOOKAHEAD){
+    kick(nextNoteTime);hat(nextNoteTime+spb()/2,beat===3);
+    drawQueue.push({time:nextNoteTime,beat});
+    nextNoteTime+=spb();beat=(beat+1)%4;
+  }
+}
+function draw(){
+  if(playing&&ctx){
+    while(drawQueue.length&&drawQueue[0].time<=ctx.currentTime){
+      const e=drawQueue.shift();
+      for(let i=0;i<4;i++)$('d'+i).classList.toggle('hit',i===e.beat);
+      if(e.beat===0){const r=$('ring');r.classList.add('flash');setTimeout(()=>r.classList.remove('flash'),90);}
+    }
+    $('clock').textContent='RUN '+new Date((performance.now()-startWall)).toISOString().substr(11,8);
+  }
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+async function ensureCtx(){
+  if(!ctx){
+    ctx=new(window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
+    const out=(ctx.outputLatency||0)*1000, base=(ctx.baseLatency||0)*1000;
+    $('mLat').textContent=out?out.toFixed(1)+'ms':base.toFixed(1)+'ms*';
+    $('mLat').className='val mono '+((out||base)<=20?'ok':'bad');
+    log(`AudioContext初期化 SR=${ctx.sampleRate}Hz out=${out?out.toFixed(1)+'ms':base.toFixed(1)+'ms(base)'}`);
+  }
+  await ctx.resume();
+}
+
+// ── START/STOP(内部ループ) ──
+$('playBtn').addEventListener('click',async()=>{
+  await ensureCtx(); requestWakeLock();
+  playing=!playing;
+  if(playing){beat=0;drawQueue=[];nextNoteTime=ctx.currentTime+.06;lastTick=0;startWall=performance.now();timerId=setInterval(scheduler,TICK);$('playBtn').textContent='■ STOP';$('playBtn').classList.add('on');log('内部ループ再生開始');}
+  else{clearInterval(timerId);$('playBtn').textContent='▶ START';$('playBtn').classList.remove('on');log('停止');}
+});
+
+// ── BPM手動操作 ──
+function bumpBpm(d){bpm=Math.min(200,Math.max(60,Math.round((bpm+d)*10)/10));$('bpmRead').firstChild.textContent=bpm.toFixed(1);}
+function holdable(el,fn){let iv,to;const down=e=>{e.preventDefault();fn();to=setTimeout(()=>iv=setInterval(fn,70),420);};const up=()=>{clearTimeout(to);clearInterval(iv);};el.addEventListener('pointerdown',down);['pointerup','pointercancel','pointerleave'].forEach(ev=>el.addEventListener(ev,up));}
+holdable($('bpmDown'),()=>bumpBpm(-.1));holdable($('bpmUp'),()=>bumpBpm(.1));
+
+// ── 巨大TAP ──
+$('tapPad').addEventListener('pointerdown',()=>{
+  if(!ctx)return;const pw=performance.now();const t=ctx.currentTime+.005;click(t);
+  if(playing){beat=0;drawQueue=[];nextNoteTime=t+.005;}
+  const sched=(t-ctx.currentTime)*1000,out=(ctx.outputLatency||ctx.baseLatency||0)*1000,js=performance.now()-pw,total=sched+out+js;
+  $('mTap').textContent=total.toFixed(1)+'ms';$('mTap').className='val mono '+(total<=20?'ok':'bad');
+});
+document.querySelectorAll('#nudge button').forEach(b=>holdable(b,()=>{if(playing){nextNoteTime+=parseFloat(b.dataset.n)/1000;log(`NUDGE ${b.dataset.n}ms`);}}));
+
+// ══════════════════════════════════════════════
+//  マイクBPM検出エンジン
+// ══════════════════════════════════════════════
+let micStream=null, listening=false;
+let lvlAna=null, detAna=null;          // レベル用 / 検出用アナライザ
+const SR_ENV=100;                      // 包絡線サンプルレート(Hz)
+const ENV_LEN=SR_ENV*6;                // 6秒ぶんの包絡線
+let env=new Float32Array(ENV_LEN), envIdx=0, prevE=0;
+let envTimer=null, detTimer=null;
+let td=null;                           // 時間波形バッファ
+let bpmHist=[];                        // ロック判定用
+
+// 共通: 任意のソースノードを検出チェインに接続してタイマー開始
+function buildChain(src, toOutput){
+  lvlAna=ctx.createAnalyser(); lvlAna.fftSize=1024;
+  const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=40;
+  const bp=ctx.createBiquadFilter(); bp.type='lowpass'; bp.frequency.value=160; bp.Q.value=1;
+  detAna=ctx.createAnalyser(); detAna.fftSize=1024; td=new Uint8Array(detAna.fftSize);
+  src.connect(lvlAna); src.connect(hp); hp.connect(bp); bp.connect(detAna);
+  if(toOutput) src.connect(ctx.destination);
+  env.fill(0); envIdx=0; prevE=0; bpmHist=[];
+  envTimer=setInterval(sampleEnv,1000/SR_ENV); detTimer=setInterval(estimate,500);
+  listening=true; $('detBpm').classList.remove('idle'); requestWakeLock();
+}
+
+// ── ファイル検出(プレビュー内で動作) ──
+let fileNode=null;
+$('fileBtn').addEventListener('click',()=>{ if(listening){stopListen();return;} $('fileIn').click(); });
+$('fileIn').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    await ensureCtx();
+    $('detStat').textContent='デコード中…';
+    const buf=await ctx.decodeAudioData(await f.arrayBuffer());
+    fileNode=ctx.createBufferSource(); fileNode.buffer=buf; fileNode.loop=true;
+    buildChain(fileNode,true); fileNode.start();
+    $('fileBtn').textContent='■ 停止'; $('fileBtn').classList.add('on');
+    $('detStat').textContent='再生+検出中: '+f.name;
+    log('ファイル検出開始: '+f.name+' '+buf.duration.toFixed(1)+'s');
+  }catch(err){ log('ファイル失敗: '+err.name+' '+err.message); $('detStat').textContent='読込失敗: '+err.name; }
+  e.target.value='';
+});
+
+// ── マイク検出(https配信時のみ) ──
+$('listenBtn').addEventListener('click', async()=>{
+  if(listening){ stopListen(); return; }
+  try{
+    await ensureCtx();
+    micStream=await navigator.mediaDevices.getUserMedia({audio:{
+      echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1
+    }});
+    buildChain(ctx.createMediaStreamSource(micStream), false);
+    $('listenBtn').textContent='■ 停止'; $('listenBtn').classList.add('on');
+    $('detStat').textContent='計測中… レコードを2〜3小節ぶん聴かせてください';
+    log('マイク検出開始 SR='+ctx.sampleRate);
+  }catch(e){
+    log('マイク取得失敗: '+e.name+' '+e.message);
+    $('detStat').textContent='マイク不可: '+e.name+'（サンドボックス/非https）→「曲を読み込んで検出」で代替';
+  }
+});
+
+function stopListen(){
+  clearInterval(envTimer); clearInterval(detTimer);
+  if(micStream){ micStream.getTracks().forEach(t=>t.stop()); micStream=null; }
+  if(fileNode){ try{fileNode.stop();}catch(e){} fileNode=null; }
+  listening=false;
+  $('listenBtn').textContent='🎙 マイク（要ホスト）'; $('listenBtn').classList.remove('on');
+  $('fileBtn').textContent='🎵 曲を読み込んで検出（プレビュー可）'; $('fileBtn').classList.remove('on');
+  $('detStat').textContent='停止中'; $('detBpm').classList.add('idle');
+  $('confBar').firstChild.style.width='0'; $('lvlBar').style.width='0';
+  log('検出停止');
+}
+
+// 包絡線サンプリング(100Hz): 低域RMSの正の変化=フラックス
+function sampleEnv(){
+  detAna.getByteTimeDomainData(td);
+  let s=0; for(let i=0;i<td.length;i++){const v=(td[i]-128)/128; s+=v*v;}
+  const rms=Math.sqrt(s/td.length);
+  const flux=Math.max(0, rms-prevE); prevE=rms;
+  env[envIdx]=flux; envIdx=(envIdx+1)%ENV_LEN;
+  // レベルメータ(生マイク)
+  const lt=new Uint8Array(lvlAna.fftSize); lvlAna.getByteTimeDomainData(lt);
+  let ls=0; for(let i=0;i<lt.length;i++){const v=(lt[i]-128)/128; ls+=v*v;}
+  const lvl=Math.min(1,Math.sqrt(ls/lt.length)*4);
+  $('lvlBar').style.width=(lvl*100)+'%';
+  $('micLvl').textContent=(lvl>0.02?Math.round(lvl*100)+'%':'--');
+}
+
+// テンポ推定: 自己相関 → ピーク周期 → BPM(オクターブ折り込み)
+function estimate(){
+  // ring bufferを時系列順に展開 & 平均除去
+  const buf=new Float32Array(ENV_LEN);
+  let mean=0;
+  for(let i=0;i<ENV_LEN;i++){const v=env[(envIdx+i)%ENV_LEN]; buf[i]=v; mean+=v;}
+  mean/=ENV_LEN;
+  let energy=0; for(let i=0;i<ENV_LEN;i++){buf[i]-=mean; energy+=buf[i]*buf[i];}
+  if(energy<1e-4){$('detStat').textContent='信号が弱い — 音量/マイク位置を確認';return;}
+
+  // lag 30..100 サンプル = 60..200 BPM (100Hzサンプルなので BPM=6000/lag)
+  let best={lag:0,val:-1};
+  const minLag=30,maxLag=100;
+  for(let lag=minLag;lag<=maxLag;lag++){
+    let s=0; const n=ENV_LEN-lag;
+    for(let i=0;i<n;i++) s+=buf[i]*buf[i+lag];
+    s/=n;
+    if(s>best.val) best={lag,val:s};
+  }
+  // オクターブ補正: half/double も評価し、優先帯(82-164)へ寄せる
+  const cand=[best.lag, best.lag*2, Math.round(best.lag/2)];
+  let chosen=best.lag, chosenVal=best.val;
+  for(const l of cand){
+    if(l<minLag||l>maxLag) continue;
+    let s=0; const n=ENV_LEN-l;
+    for(let i=0;i<n;i++) s+=buf[i]*buf[i+l];
+    s/=n;
+    let b=6000/l; // BPM
+    const inBand=(b>=82&&b<164);
+    if(inBand && s>chosenVal*0.6){chosen=l;chosenVal=s;}
+  }
+  let det=6000/chosen;
+  while(det<82)det*=2; while(det>=164)det/=2;
+  det=Math.round(det*10)/10;
+  const conf=Math.max(0,Math.min(1, best.val/(energy/ENV_LEN)));
+  $('confBar').firstChild.style.width=(conf*100)+'%';
+
+  // ロック判定: 直近3回が±1.5BPM以内
+  bpmHist.push(det); if(bpmHist.length>4)bpmHist.shift();
+  const stable=bpmHist.length>=3 && Math.max(...bpmHist)-Math.min(...bpmHist)<=1.5;
+  $('detBpm').firstChild.textContent=det.toFixed(1);
+  $('detBpm').classList.toggle('locked',stable);
+  $('detStat').textContent = stable
+    ? `● LOCKED  確信度 ${(conf*100).toFixed(0)}%  — 「マスターへ送る」で反映`
+    : `計測中…  候補 ${det.toFixed(1)} BPM  確信度 ${(conf*100).toFixed(0)}%`;
+}
+
+$('pushBtn').addEventListener('click',()=>{
+  const v=parseFloat($('detBpm').firstChild.textContent);
+  if(!isNaN(v)&&v>0){bpm=v;$('bpmRead').firstChild.textContent=bpm.toFixed(1);log(`検出BPM ${bpm.toFixed(1)} をマスターへ反映`);}
+});
+
+// ── Wake Lock ──
+let wakeLock=null;
+async function requestWakeLock(){try{if('wakeLock'in navigator){wakeLock=await navigator.wakeLock.request('screen');}else log('WakeLock非対応 — 自動ロックを「なし」に');}catch(e){log('WakeLock失敗:'+e.message);}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&(playing||listening))requestWakeLock();});
+</script>
+</body>
+</html>
