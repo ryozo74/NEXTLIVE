@@ -5,338 +5,405 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>NextLive — Phase 0 検証リグ</title>
+<title>NextLive — M1 ループエンジン</title>
 <style>
-  :root {
-    --bg: #101114;
-    --panel: #191b20;
-    --panel-2: #1f2228;
-    --line: #2c3039;
-    --ink: #e8e6e1;
-    --ink-dim: #8a8f99;
-    --amber: #ffb454;
-    --amber-deep: #ff9f2e;
-    --ok: #6fd394;
-    --warn: #ff5d5d;
-    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  :root{
+    --bg:#101114;--panel:#191b20;--panel-2:#1f2228;--line:#2c3039;
+    --ink:#e8e6e1;--ink-dim:#8a8f99;--amber:#ffb454;--amber-deep:#ff9f2e;
+    --cyan:#4fd6e0;--rec:#ff4d5e;--ok:#6fd394;--warn:#ff5d5d;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
-  html, body { height: 100%; background: var(--bg); color: var(--ink);
-    font-family: -apple-system, "Hiragino Sans", sans-serif; overscroll-behavior: none; }
-  body { display: flex; flex-direction: column; padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom)); gap: 10px; user-select: none; -webkit-user-select: none; }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
+  html,body{height:100%;background:var(--bg);color:var(--ink);font-family:-apple-system,"Hiragino Sans",sans-serif;overscroll-behavior:none;}
+  body{display:flex;flex-direction:column;padding:max(8px,env(safe-area-inset-top)) 10px max(8px,env(safe-area-inset-bottom));gap:8px;user-select:none;-webkit-user-select:none;}
+  .row{display:flex;gap:8px;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;}
+  .label{font-size:10px;letter-spacing:.16em;color:var(--ink-dim);text-transform:uppercase;margin-bottom:4px;}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;}
 
-  .row { display: flex; gap: 10px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-  .label { font-size: 10px; letter-spacing: 0.18em; color: var(--ink-dim); text-transform: uppercase; margin-bottom: 4px; }
-  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  header{display:flex;align-items:baseline;justify-content:space-between;}
+  header h1{font-size:12px;letter-spacing:.2em;font-weight:600;}
+  header h1 em{color:var(--amber);font-style:normal;}
+  #clock{font-family:var(--mono);font-size:11px;color:var(--ink-dim);}
 
-  /* ── ヘッダー ── */
-  header { display: flex; align-items: baseline; justify-content: space-between; }
-  header h1 { font-size: 13px; letter-spacing: 0.22em; font-weight: 600; }
-  header h1 em { color: var(--amber); font-style: normal; }
-  #clock { font-family: var(--mono); font-size: 12px; color: var(--ink-dim); }
+  button.hw{background:var(--panel-2);color:var(--ink);border:1px solid var(--line);
+    border-bottom:3px solid #0a0b0d;border-radius:8px;font-family:var(--mono);font-size:14px;
+    font-weight:600;padding:12px 0;cursor:pointer;flex:1;}
+  button.hw:active{transform:translateY(2px);border-bottom-width:1px;background:#262a32;}
+  button.hw.on{color:var(--ok);border-color:#2c4d3a;}
+  button.hw.amber{color:var(--amber);border-color:#4d3a1e;}
+  button.hw.cyan{color:var(--cyan);border-color:#2a4d52;}
+  button.hw.rec{color:var(--rec);border-color:#5a2630;}
+  button.hw.rec.armed{background:#3a1a20;animation:pulse .6s infinite;}
+  @keyframes pulse{50%{background:#5a2630;}}
+  .btnrow{display:flex;gap:6px;}
 
-  /* ── トランスポート ── */
-  #transport { flex: 1; display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
-  #bpmRead { font-family: var(--mono); font-size: 46px; font-weight: 700; line-height: 1;
-    text-align: center; color: var(--amber); cursor: pointer; padding: 4px 0; }
-  #bpmRead small { font-size: 12px; color: var(--ink-dim); font-weight: 400; display: block; margin-top: 2px; letter-spacing: 0.15em; }
-  .btnrow { display: flex; gap: 8px; }
-  button.hw {
-    flex: 1; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
-    border-bottom: 3px solid #0a0b0d; border-radius: 8px; font-family: var(--mono);
-    font-size: 16px; font-weight: 600; padding: 14px 0; cursor: pointer;
-  }
-  button.hw:active { transform: translateY(2px); border-bottom-width: 1px; background: #262a32; }
-  button.hw.amber { color: var(--amber); border-color: #4d3a1e; }
-  #playBtn { font-size: 18px; letter-spacing: 0.2em; }
-  #playBtn.on { color: var(--ok); border-color: #2c4d3a; }
+  /* 入力 */
+  #inputPanel .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .bar{height:7px;background:#0c0d10;border-radius:4px;overflow:hidden;}
+  .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ok),var(--amber),var(--warn));transition:width 60ms;}
+  #inStat{font-size:11px;color:var(--ink-dim);margin-top:6px;min-height:15px;}
 
-  /* ── ビートインジケーター ── */
-  #beats { display: flex; gap: 8px; justify-content: center; padding: 2px 0 4px; }
-  .dot { width: 14px; height: 14px; border-radius: 50%; background: #2c3039; transition: background 60ms; }
-  .dot.hit { background: var(--amber); box-shadow: 0 0 14px rgba(255,180,84,.55); }
-  .dot.one.hit { background: var(--warn); box-shadow: 0 0 14px rgba(255,93,93,.55); }
+  /* トランスポート */
+  #bpmRead{font-family:var(--mono);font-size:30px;font-weight:700;text-align:center;color:var(--amber);line-height:1;}
+  #bpmRead small{font-size:9px;color:var(--ink-dim);display:block;letter-spacing:.15em;}
+  #beats{display:flex;gap:6px;justify-content:center;padding:4px 0;}
+  .dot{width:11px;height:11px;border-radius:50%;background:#2c3039;transition:background 50ms;}
+  .dot.hit{background:var(--amber);box-shadow:0 0 10px rgba(255,180,84,.5);}
+  .dot.one.hit{background:var(--warn);}
 
-  /* ── NUDGE ── */
-  #nudge .btnrow button { font-size: 14px; padding: 16px 0; }
+  /* サンプラー */
+  #barSel .btnrow button.sel{color:var(--cyan);border-color:#2a4d52;background:#13282b;}
 
-  /* ── 巨大TAPパッド ── */
-  #tapPad {
-    flex: 2.2; min-height: 160px; border-radius: 14px; border: 1px solid #4d3a1e;
-    background: radial-gradient(circle at 50% 45%, #241d12 0%, #17140e 70%);
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    cursor: pointer; position: relative; overflow: hidden;
-  }
-  #tapPad .big { font-size: 40px; font-weight: 800; letter-spacing: 0.35em; color: var(--amber-deep); }
-  #tapPad .sub { font-size: 11px; letter-spacing: 0.2em; color: var(--ink-dim); margin-top: 6px; }
-  #tapPad:active { background: radial-gradient(circle at 50% 45%, #4d3a1e 0%, #241d12 70%); }
-  #tapPad .ring { position: absolute; inset: 0; border-radius: 14px; border: 3px solid transparent; pointer-events: none; }
-  #tapPad .ring.flash { border-color: var(--amber); transition: none; }
+  /* スロット */
+  #slots{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;flex:1;min-height:0;}
+  .slot{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:8px 4px;cursor:pointer;position:relative;overflow:hidden;min-height:74px;}
+  .slot .n{position:absolute;top:5px;left:7px;font:600 10px var(--mono);color:var(--ink-dim);}
+  .slot .st{font-size:11px;color:var(--ink-dim);letter-spacing:.1em;}
+  .slot.loaded{border-color:#4d3a1e;}
+  .slot.loaded .st{color:var(--amber);}
+  .slot.playing{border-color:var(--ok);background:#12241a;}
+  .slot.playing .st{color:var(--ok);}
+  .slot .wave{position:absolute;inset:auto 0 0 0;height:26px;opacity:.5;}
+  .slot .prog{position:absolute;top:0;bottom:0;left:0;width:0;background:rgba(111,211,148,.12);pointer-events:none;}
 
-  /* ── 計測 ── */
-  #meters { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
-  .meter { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
-  .meter .val { font-family: var(--mono); font-size: 17px; font-weight: 700; }
-  .meter .val.ok { color: var(--ok); } .meter .val.bad { color: var(--warn); }
-
-  /* ── ログ/チェックリスト ── */
-  #check { font-size: 12px; line-height: 1.7; color: var(--ink-dim); }
-  #check b { color: var(--ink); font-weight: 600; }
-  #log { font-family: var(--mono); font-size: 10px; color: var(--ink-dim); max-height: 56px; overflow-y: auto; white-space: pre-wrap; }
+  #log{font-family:var(--mono);font-size:10px;color:var(--ink-dim);max-height:44px;overflow-y:auto;white-space:pre-wrap;}
+  .hint{font-size:10px;color:var(--ink-dim);margin-top:2px;}
 </style>
 </head>
 <body>
 
 <header>
-  <h1>NEXTLIVE <em>/ PHASE 0 RIG</em></h1>
-  <div id="clock" class="mono">RUN 00:00:00</div>
+  <h1>NEXTLIVE <em>/ M1 LOOP ENGINE</em></h1>
+  <div id="clock" class="mono">--:--</div>
 </header>
 
-<div class="row" style="flex:1; min-height:0;">
-  <!-- 左:トランスポート -->
-  <div class="panel" id="transport" style="flex:1.1;">
-    <div class="label">Master Tempo — 表示をタップでTAPテンポ</div>
+<!-- 入力 -->
+<div class="panel" id="inputPanel">
+  <div class="head">
+    <div class="label" style="margin:0;">🎙 入力（マイク / ライン）</div>
+    <div class="label mono" style="margin:0;">LV <span id="inLvl">--</span></div>
+  </div>
+  <div class="bar"><i id="inBar"></i></div>
+  <div id="inStat">「入力ON」で許可を求めます（https配信時のみ動作）</div>
+  <div class="btnrow" style="margin-top:8px;">
+    <button class="hw cyan" id="inputBtn">🎙 入力ON</button>
+  </div>
+</div>
+
+<!-- トランスポート -->
+<div class="row">
+  <div class="panel" style="flex:1;">
+    <div class="label">Master Tempo — 数字を拍でタップ</div>
     <div id="bpmRead">124.0<small>BPM</small></div>
-    <div class="btnrow">
+    <div class="btnrow" style="margin-top:6px;">
       <button class="hw" id="bpmDown">−0.1</button>
       <button class="hw" id="bpmUp">＋0.1</button>
     </div>
-    <div id="beats">
-      <div class="dot one" id="d0"></div><div class="dot" id="d1"></div>
-      <div class="dot" id="d2"></div><div class="dot" id="d3"></div>
+  </div>
+  <div class="panel" style="flex:1;display:flex;flex-direction:column;">
+    <div class="label">Grid</div>
+    <div id="beats"><div class="dot one" id="d0"></div><div class="dot" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div></div>
+    <button class="hw amber" id="playBtn" style="margin-top:2px;">▶ GRID</button>
+    <div class="btnrow" style="margin-top:6px;">
+      <button class="hw" id="metBtn">CLICK</button>
+      <button class="hw" id="tapReset">TAP↺</button>
     </div>
-    <button class="hw amber" id="playBtn">▶ START</button>
-    <div class="label" style="margin-top:6px;">Nudge — 位相の微調整</div>
-    <div id="nudge">
-      <div class="btnrow">
-        <button class="hw" data-n="-23">≪ −23ms</button>
-        <button class="hw" data-n="-5">‹ −5ms</button>
-        <button class="hw" data-n="5">＋5ms ›</button>
-        <button class="hw" data-n="23">＋23ms ≫</button>
+  </div>
+</div>
+
+<!-- サンプラー -->
+<div class="panel" id="sampler">
+  <div class="row" style="align-items:center;">
+    <div style="flex:1;">
+      <div class="label">録音長（小節）</div>
+      <div class="btnrow" id="barSel">
+        <button class="hw sel" data-b="1">1</button>
+        <button class="hw" data-b="2">2</button>
+        <button class="hw" data-b="4">4</button>
       </div>
     </div>
+    <div style="flex:1.1;">
+      <div class="label">録音先スロット</div>
+      <div id="recTarget" class="mono" style="font-size:20px;font-weight:700;text-align:center;color:var(--cyan);">1</div>
+    </div>
   </div>
-
-  <!-- 右:巨大TAP -->
-  <div id="tapPad">
-    <div class="ring" id="ring"></div>
-    <div class="big">TAP</div>
-    <div class="sub">小節頭リセット / レイテンシ計測</div>
-  </div>
+  <button class="hw rec" id="recBtn" style="margin-top:8px;width:100%;">● REC（次の小節頭から録音）</button>
+  <div class="hint">GRID再生中に押すと、次の小節頭から指定小節ぶんを正確にキャプチャ → 録音先スロットへ</div>
 </div>
 
-<div id="meters">
-  <div class="meter"><div class="label">出力レイテンシ</div><div class="val mono" id="mLat">—</div></div>
-  <div class="meter"><div class="label">TAP→発音 実測</div><div class="val mono" id="mTap">—</div></div>
-  <div class="meter"><div class="label">ドロップ警告</div><div class="val mono ok" id="mDrop">0</div></div>
-</div>
+<!-- スロット -->
+<div id="slots"></div>
 
-<div class="panel">
-  <div class="label">検証チェックリスト</div>
-  <div id="check">
-    <b>A 出音経路:</b> iPad→IF/ヘッドホン端子→ミキサー空きch。レコードと並走させ違和感がないか ／
-    <b>B レイテンシ:</b> 「TAP→発音 実測」が<b>20ms以下</b>で緑 ／
-    <b>C 安定性:</b> STARTのまま60分放置。「ドロップ警告」が0のまま・RUNタイマーが止まらなければ合格
-  </div>
-</div>
-
-<div class="panel"><div id="log">[待機] STARTを押すとAudioContextを初期化します(iOSはユーザー操作必須)</div></div>
+<div class="panel"><div id="log">[待機] 手順: ①入力ON ②レコードにBPMを合わせTAP↺で頭出し ③RECでサンプリング ④スロットをタップでループ</div></div>
 
 <script>
 'use strict';
-// ─────────────────────────────────────────────
-// NextLive Phase 0 検証リグ
-// Web Audio lookahead scheduler + TAP/NUDGE + 計測
-// ─────────────────────────────────────────────
-let ctx = null;
-let playing = false;
-let bpm = 124.0;
-let beat = 0;                 // 0..3
-let nextNoteTime = 0;         // 次の発音時刻(ctx時間)
-const LOOKAHEAD = 0.12;       // 先読み窓(秒)
-const TICK = 25;              // スケジューラ周期(ms)
-let timerId = null;
-let lastTick = 0;
-let dropCount = 0;
-let startWall = 0;
-let drawQueue = [];           // {time, beat}
-let tapTimes = [];            // TAPテンポ用
+// ══════════════════════════════════════════════
+//  NextLive M1 — ループエンジン
+//  Phase0のトランスポート + 入力キャプチャ + 小節頭クオンタイズ・ループ
+// ══════════════════════════════════════════════
+const $=id=>document.getElementById(id);
+const log=m=>{const e=$('log');e.textContent=`[${new Date().toLocaleTimeString()}] ${m}\n`+e.textContent.slice(0,1600);};
 
-const $ = id => document.getElementById(id);
-const log = m => { const el = $('log'); el.textContent = `[${new Date().toLocaleTimeString()}] ${m}\n` + el.textContent.slice(0, 2000); };
+let ctx=null, master=null;
+let running=false, metOn=false;
+let bpm=124.0, beat=0, nextNoteTime=0;
+const LOOKAHEAD=0.12, TICK=25; let timerId=null;
+let downbeats=[];              // 予定されている小節頭(ctx時間)の配列
+const BEATS=4;
+const spb=()=>60/bpm;
+const barSec=()=>BEATS*spb();
 
-function secPerBeat() { return 60.0 / bpm; }
+// ── 入力 ──
+let micStream=null, micSource=null, proc=null;
+let inputOn=false, inLevel=0;
 
-// ── 音源(全部シンセ生成・サンプル不要) ──
-function playKick(t) {
-  const o = ctx.createOscillator(), g = ctx.createGain();
-  o.frequency.setValueAtTime(150, t);
-  o.frequency.exponentialRampToValueAtTime(45, t + 0.11);
-  g.gain.setValueAtTime(0.9, t);
-  g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-  o.connect(g).connect(ctx.destination);
-  o.start(t); o.stop(t + 0.3);
-}
-let noiseBuf = null;
-function playHat(t, open) {
-  if (!noiseBuf) {
-    noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 0.2, ctx.sampleRate);
-    const d = noiseBuf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+// ── 録音 ──
+let rec=null;                 // {state,bars,targetLen,buf,written,startTime,slot}
+let recBars=1, recTarget=0;
+
+// ── スロット ──
+const NSLOT=6;
+const slots=new Array(NSLOT).fill(null);   // AudioBuffer
+const active=new Array(NSLOT).fill(null);  // 再生中のsource
+const slotGain=new Array(NSLOT).fill(null);
+
+// ---------- AudioContext ----------
+async function ensureCtx(){
+  if(!ctx){
+    ctx=new(window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
+    master=ctx.createGain(); master.gain.value=0.9; master.connect(ctx.destination);
+    for(let i=0;i<NSLOT;i++){slotGain[i]=ctx.createGain();slotGain[i].gain.value=0.9;slotGain[i].connect(master);}
+    log('AudioContext SR='+ctx.sampleRate+'Hz outLat='+((ctx.outputLatency||ctx.baseLatency||0)*1000).toFixed(1)+'ms');
   }
-  const s = ctx.createBufferSource(); s.buffer = noiseBuf;
-  const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 8000;
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(open ? 0.3 : 0.22, t);
-  g.gain.exponentialRampToValueAtTime(0.001, t + (open ? 0.18 : 0.05));
-  s.connect(f).connect(g).connect(ctx.destination);
-  s.start(t); s.stop(t + 0.2);
-}
-function playClick(t) { // TAPレイテンシ計測用クリック
-  const o = ctx.createOscillator(), g = ctx.createGain();
-  o.frequency.value = 2000;
-  g.gain.setValueAtTime(0.5, t);
-  g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
-  o.connect(g).connect(ctx.destination);
-  o.start(t); o.stop(t + 0.04);
+  await ctx.resume();
 }
 
-// ── ルックアヘッド・スケジューラ ──
-function scheduler() {
-  // ドロップ検出: 周期のジッター監視
-  const now = performance.now();
-  if (lastTick && now - lastTick > TICK * 4) {
-    dropCount++;
-    $('mDrop').textContent = dropCount;
-    $('mDrop').className = 'val mono bad';
-    log(`スケジューラ遅延 ${(now - lastTick).toFixed(0)}ms 検出`);
+// ---------- 入力ON ----------
+$('inputBtn').addEventListener('click', async()=>{
+  if(inputOn){ // OFF
+    if(micStream)micStream.getTracks().forEach(t=>t.stop());
+    if(proc)proc.disconnect(); inputOn=false;
+    $('inputBtn').textContent='🎙 入力ON'; $('inputBtn').classList.remove('on');
+    $('inStat').textContent='入力OFF'; return;
   }
-  lastTick = now;
-
-  while (nextNoteTime < ctx.currentTime + LOOKAHEAD) {
-    playKick(nextNoteTime);
-    playHat(nextNoteTime + secPerBeat() / 2, beat === 3); // 裏ハット
-    drawQueue.push({ time: nextNoteTime, beat });
-    nextNoteTime += secPerBeat();
-    beat = (beat + 1) % 4;
+  try{
+    await ensureCtx();
+    $('inStat').textContent='マイク許可を要求中…';
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)
+      throw new Error('getUserMedia非対応(https必須)');
+    micStream=await navigator.mediaDevices.getUserMedia({audio:{
+      echoCancellation:false,noiseSuppression:false,autoGainControl:false,channelCount:1
+    }});
+    micSource=ctx.createMediaStreamSource(micStream);
+    proc=ctx.createScriptProcessor(1024,1,1);
+    micSource.connect(proc);
+    const sink=ctx.createGain(); sink.gain.value=0; proc.connect(sink); sink.connect(ctx.destination); // processor維持用
+    proc.onaudioprocess=onAudio;
+    inputOn=true;
+    $('inputBtn').textContent='🎙 入力ON（動作中）'; $('inputBtn').classList.add('on');
+    $('inStat').textContent='入力OK。レベルが動くか確認 → BPMを合わせてREC';
+    const tr=micStream.getAudioTracks()[0];
+    log('入力ON: '+(tr?tr.label:'?')+' SR='+ctx.sampleRate);
+  }catch(e){
+    inputOn=false;
+    $('inStat').textContent='入力不可: '+e.name+' — '+e.message+'（https配信 & マイク許可が必要）';
+    log('入力失敗: '+e.name+' '+e.message);
   }
-}
+});
 
-// ── 描画(発音時刻に同期してドット点灯) ──
-function draw() {
-  if (playing && ctx) {
-    while (drawQueue.length && drawQueue[0].time <= ctx.currentTime) {
-      const e = drawQueue.shift();
-      for (let i = 0; i < 4; i++) $('d' + i).classList.toggle('hit', i === e.beat);
-      if (e.beat === 0) { const r = $('ring'); r.classList.add('flash'); setTimeout(() => r.classList.remove('flash'), 90); }
+// ---------- オーディオ処理(レベル計測 + 録音) ----------
+function onAudio(e){
+  const inp=e.inputBuffer.getChannelData(0);
+  const N=inp.length;
+  // レベル
+  let s=0; for(let i=0;i<N;i++)s+=inp[i]*inp[i];
+  inLevel=Math.sqrt(s/N);
+  // 録音
+  if(rec && rec.state==='armed'){
+    // このブロックにstartTimeが入っているか
+    const blkStart=ctx.currentTime;
+    if(blkStart+ N/ctx.sampleRate >= rec.startTime){
+      rec.state='rec';
+      // ブロック内オフセット
+      let off=Math.round((rec.startTime-blkStart)*ctx.sampleRate);
+      if(off<0)off=0; if(off>N)off=N;
+      copyIn(inp,off,N);
     }
-    const el = (performance.now() - startWall) / 1000;
-    $('clock').textContent = 'RUN ' + new Date(el * 1000).toISOString().substr(11, 8);
+  } else if(rec && rec.state==='rec'){
+    copyIn(inp,0,N);
+  }
+}
+function copyIn(inp,from,to){
+  for(let i=from;i<to && rec.written<rec.targetLen;i++) rec.buf[rec.written++]=inp[i];
+  if(rec.written>=rec.targetLen) finalizeRec();
+}
+function finalizeRec(){
+  const b=ctx.createBuffer(1,rec.targetLen,ctx.sampleRate);
+  b.copyToChannel(rec.buf,0);
+  const idx=rec.slot;
+  slots[idx]=b;
+  renderSlot(idx);
+  log(`スロット${idx+1}に録音完了: ${rec.bars}小節 / ${(rec.targetLen/ctx.sampleRate).toFixed(2)}s`);
+  const btn=$('recBtn'); btn.classList.remove('armed'); btn.textContent='● REC（次の小節頭から録音）';
+  // 次スロットへ自動送り
+  recTarget=(idx+1)%NSLOT; $('recTarget').textContent=recTarget+1;
+  rec=null;
+}
+
+// ---------- REC アーム ----------
+$('recBtn').addEventListener('click',()=>{
+  if(!inputOn){ $('inStat').textContent='先に「入力ON」を押してください'; return; }
+  if(!running){ log('先にGRIDを再生してBPMを走らせてください'); return; }
+  if(rec){ // キャンセル
+    rec=null; $('recBtn').classList.remove('armed'); $('recBtn').textContent='● REC（次の小節頭から録音）'; log('REC取消'); return;
+  }
+  const targetLen=Math.round(recBars*barSec()*ctx.sampleRate);
+  rec={state:'armed',bars:recBars,targetLen,buf:new Float32Array(targetLen),written:0,startTime:nextBarTime(),slot:recTarget};
+  $('recBtn').classList.add('armed'); $('recBtn').textContent='● 待機中…次の小節頭で録音開始';
+  log(`REC待機: ${recBars}小節 → スロット${recTarget+1}`);
+});
+
+// ---------- スロットUI ----------
+function buildSlots(){
+  const wrap=$('slots'); wrap.innerHTML='';
+  for(let i=0;i<NSLOT;i++){
+    const d=document.createElement('div'); d.className='slot'; d.id='slot'+i;
+    d.innerHTML=`<span class="n">${i+1}</span><div class="prog" id="prog${i}"></div><canvas class="wave" id="wave${i}" width="120" height="26"></canvas><span class="st">空</span>`;
+    d.addEventListener('click',()=>toggleSlot(i));
+    // 長押しでクリア / 録音先指定
+    let to;
+    d.addEventListener('pointerdown',()=>{to=setTimeout(()=>{ if(slots[i]){clearSlot(i);} else {recTarget=i;$('recTarget').textContent=i+1;log('録音先をスロット'+(i+1)+'に設定');} },600);});
+    ['pointerup','pointerleave','pointercancel'].forEach(ev=>d.addEventListener(ev,()=>clearTimeout(to)));
+    wrap.appendChild(d);
+  }
+}
+function renderSlot(i){
+  const d=$('slot'+i), st=d.querySelector('.st');
+  if(slots[i]){ d.classList.add('loaded'); st.textContent=(slots[i].length/ctx.sampleRate).toFixed(2)+'s'; drawWave(i); }
+  else{ d.classList.remove('loaded','playing'); st.textContent='空'; const c=$('wave'+i).getContext('2d'); c.clearRect(0,0,120,26); }
+}
+function drawWave(i){
+  const b=slots[i], data=b.getChannelData(0), c=$('wave'+i).getContext('2d');
+  c.clearRect(0,0,120,26); c.strokeStyle='#ffb454'; c.beginPath();
+  const step=Math.floor(data.length/120)||1;
+  for(let x=0;x<120;x++){let mx=0;for(let k=0;k<step;k++){const v=Math.abs(data[x*step+k]||0);if(v>mx)mx=v;}const h=mx*24;c.moveTo(x,13-h/2);c.lineTo(x,13+h/2);}
+  c.stroke();
+}
+function clearSlot(i){ if(active[i]){try{active[i].stop();}catch(e){} active[i]=null;} slots[i]=null; renderSlot(i); log('スロット'+(i+1)+'クリア'); }
+
+// ---------- スロット再生(小節頭クオンタイズ) ----------
+function toggleSlot(i){
+  if(!slots[i])return;
+  if(active[i]){ // 停止(次の小節頭)
+    const src=active[i]; const t=nextBarTime(); try{src.stop(t);}catch(e){}
+    active[i]=null; $('slot'+i).classList.remove('playing'); return;
+  }
+  const src=ctx.createBufferSource(); src.buffer=slots[i]; src.loop=true;
+  src.connect(slotGain[i]);
+  const t=nextBarTime(); src.start(t);
+  active[i]=src; src._startAt=t;
+  $('slot'+i).classList.add('playing');
+  log('スロット'+(i+1)+'ループ開始');
+}
+
+// ---------- クロック / スケジューラ ----------
+function nextBarTime(){
+  const now=ctx.currentTime+0.02;
+  downbeats=downbeats.filter(t=>t>now-0.001);
+  if(downbeats.length) return downbeats[0];
+  // フォールバック: 次のnextNoteTimeを小節頭に丸め
+  return nextNoteTime;
+}
+function click(t,accent){
+  const o=ctx.createOscillator(),g=ctx.createGain();
+  o.frequency.value=accent?1600:1000;
+  g.gain.setValueAtTime(accent?0.5:0.3,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.03);
+  o.connect(g).connect(master); o.start(t); o.stop(t+0.04);
+}
+function scheduler(){
+  while(nextNoteTime<ctx.currentTime+LOOKAHEAD){
+    if(beat===0) downbeats.push(nextNoteTime);
+    if(metOn) click(nextNoteTime,beat===0);
+    drawQueue.push({time:nextNoteTime,beat});
+    nextNoteTime+=spb(); beat=(beat+1)%BEATS;
+  }
+}
+let drawQueue=[];
+function draw(){
+  if(running&&ctx){
+    while(drawQueue.length&&drawQueue[0].time<=ctx.currentTime){
+      const e=drawQueue.shift();
+      for(let i=0;i<BEATS;i++)$('d'+i).classList.toggle('hit',i===e.beat);
+    }
+    // 再生プログレス
+    for(let i=0;i<NSLOT;i++){
+      if(active[i]&&slots[i]){
+        const dur=slots[i].length/ctx.sampleRate;
+        const pos=((ctx.currentTime-active[i]._startAt)%dur)/dur;
+        $('prog'+i).style.width=(pos*100)+'%';
+      } else if($('prog'+i)) $('prog'+i).style.width='0';
+    }
+    $('clock').textContent='GRID '+Math.floor((ctx.currentTime)%3600/60)+':'+String(Math.floor(ctx.currentTime%60)).padStart(2,'0');
+  }
+  // レベルメータ
+  if(inputOn){
+    const v=Math.min(1,inLevel*4);
+    $('inBar').style.width=(v*100)+'%';
+    $('inLvl').textContent=inLevel>0.005?Math.round(v*100)+'%':'--';
   }
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
 
-// ── START / STOP ──
-$('playBtn').addEventListener('click', async () => {
-  if (!ctx) {
-    ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
-    await ctx.resume();
-    const base = (ctx.baseLatency || 0) * 1000;
-    const out = (ctx.outputLatency || 0) * 1000;
-    $('mLat').textContent = out ? out.toFixed(1) + 'ms' : base.toFixed(1) + 'ms*';
-    $('mLat').className = 'val mono ' + ((out || base) <= 20 ? 'ok' : 'bad');
-    log(`AudioContext初期化 SR=${ctx.sampleRate}Hz base=${base.toFixed(1)}ms output=${out ? out.toFixed(1) + 'ms' : '非対応(*=base値)'}`);
-    ctx.onstatechange = () => log(`AudioContext状態変化: ${ctx.state}`);
-    requestWakeLock();
-  }
-  playing = !playing;
-  if (playing) {
-    await ctx.resume();
-    beat = 0; drawQueue = [];
-    nextNoteTime = ctx.currentTime + 0.06;
-    lastTick = 0; startWall = performance.now();
-    timerId = setInterval(scheduler, TICK);
-    $('playBtn').textContent = '■ STOP'; $('playBtn').classList.add('on');
-    log('再生開始 — 検証C(60分放置)開始');
-  } else {
+// ---------- GRID START/STOP ----------
+$('playBtn').addEventListener('click',async()=>{
+  await ensureCtx();
+  running=!running;
+  if(running){
+    beat=0; drawQueue=[]; downbeats=[]; nextNoteTime=ctx.currentTime+0.06;
+    timerId=setInterval(scheduler,TICK);
+    $('playBtn').textContent='■ STOP'; $('playBtn').classList.add('on');
+    requestWakeLock(); log('GRID再生開始');
+  }else{
     clearInterval(timerId);
-    $('playBtn').textContent = '▶ START'; $('playBtn').classList.remove('on');
-    log('停止');
+    $('playBtn').textContent='▶ GRID'; $('playBtn').classList.remove('on');
+    log('GRID停止');
   }
 });
+$('metBtn').addEventListener('click',()=>{ metOn=!metOn; $('metBtn').classList.toggle('on',metOn); });
 
-// ── BPM操作(長押しリピート対応) ──
-function bumpBpm(d) { bpm = Math.min(200, Math.max(60, Math.round((bpm + d) * 10) / 10)); $('bpmRead').firstChild.textContent = bpm.toFixed(1); }
-function holdable(el, fn) {
-  let iv, to;
-  const down = e => { e.preventDefault(); fn(); to = setTimeout(() => iv = setInterval(fn, 70), 420); };
-  const up = () => { clearTimeout(to); clearInterval(iv); };
-  el.addEventListener('pointerdown', down);
-  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); el.addEventListener('pointerleave', up);
-}
-holdable($('bpmDown'), () => bumpBpm(-0.1));
-holdable($('bpmUp'), () => bumpBpm(0.1));
-
-// TAPテンポ(BPM表示をタップ)
-$('bpmRead').addEventListener('pointerdown', () => {
-  const now = performance.now();
-  tapTimes = tapTimes.filter(t => now - t < 2500); tapTimes.push(now);
-  if (tapTimes.length >= 3) {
-    const iv = [];
-    for (let i = 1; i < tapTimes.length; i++) iv.push(tapTimes[i] - tapTimes[i - 1]);
-    const avg = iv.reduce((a, b) => a + b) / iv.length;
-    bpm = Math.round((60000 / avg) * 10) / 10;
-    $('bpmRead').firstChild.textContent = bpm.toFixed(1);
-    log(`TAPテンポ: ${bpm.toFixed(1)} BPM`);
-  }
+// ---------- TAP↺（小節頭を今にリセット） ----------
+let tapTimes=[];
+$('tapReset').addEventListener('click',()=>{
+  if(running){ beat=0; downbeats=[]; nextNoteTime=ctx.currentTime+0.005; log('小節頭リセット'); }
 });
 
-// ── 巨大TAP: 小節頭リセット + レイテンシ実測 ──
-$('tapPad').addEventListener('pointerdown', () => {
-  if (!ctx) return;
-  const pressWall = performance.now();
-  const t = ctx.currentTime + 0.005; // 最短スケジュール
-  playClick(t);
-  if (playing) {
-    beat = 0; drawQueue = [];
-    nextNoteTime = t + 0.005;
-  }
-  // TAP→実際の出音までの推定 = スケジュール余白 + 出力レイテンシ
-  const sched = (t - ctx.currentTime) * 1000;
-  const out = ((ctx.outputLatency || ctx.baseLatency || 0)) * 1000;
-  const jsDelay = performance.now() - pressWall;
-  const total = sched + out + jsDelay;
-  $('mTap').textContent = total.toFixed(1) + 'ms';
-  $('mTap').className = 'val mono ' + (total <= 20 ? 'ok' : 'bad');
+// ---------- BPM操作 ----------
+function bumpBpm(d){bpm=Math.min(200,Math.max(60,Math.round((bpm+d)*10)/10));$('bpmRead').firstChild.textContent=bpm.toFixed(1);}
+function holdable(el,fn){let iv,to;const down=e=>{e.preventDefault();fn();to=setTimeout(()=>iv=setInterval(fn,70),420);};const up=()=>{clearTimeout(to);clearInterval(iv);};el.addEventListener('pointerdown',down);['pointerup','pointercancel','pointerleave'].forEach(ev=>el.addEventListener(ev,up));}
+holdable($('bpmDown'),()=>bumpBpm(-0.1)); holdable($('bpmUp'),()=>bumpBpm(0.1));
+$('bpmRead').addEventListener('pointerdown',()=>{
+  const now=performance.now(); tapTimes=tapTimes.filter(t=>now-t<2500); tapTimes.push(now);
+  if(tapTimes.length>=3){const iv=[];for(let i=1;i<tapTimes.length;i++)iv.push(tapTimes[i]-tapTimes[i-1]);const avg=iv.reduce((a,b)=>a+b)/iv.length;bpm=Math.round(60000/avg*10)/10;$('bpmRead').firstChild.textContent=bpm.toFixed(1);log('TAPテンポ '+bpm.toFixed(1));}
 });
 
-// ── NUDGE ──
-document.querySelectorAll('#nudge button').forEach(b => {
-  holdable(b, () => {
-    if (!playing) return;
-    const ms = parseFloat(b.dataset.n);
-    nextNoteTime += ms / 1000;
-    log(`NUDGE ${ms > 0 ? '+' : ''}${ms}ms`);
-  });
-});
+// ---------- 録音長セレクタ ----------
+document.querySelectorAll('#barSel button').forEach(b=>b.addEventListener('click',()=>{
+  recBars=parseInt(b.dataset.b);
+  document.querySelectorAll('#barSel button').forEach(x=>x.classList.remove('sel'));
+  b.classList.add('sel');
+}));
 
-// ── Wake Lock(検証C: 画面ロック対策) ──
-let wakeLock = null;
-async function requestWakeLock() {
-  try {
-    if ('wakeLock' in navigator) {
-      wakeLock = await navigator.wakeLock.request('screen');
-      log('Wake Lock取得 — 画面は消灯しません');
-      wakeLock.addEventListener('release', () => log('Wake Lock解放(画面ロック等)'));
-    } else log('Wake Lock非対応 — 設定>画面表示で自動ロックを「なし」に');
-  } catch (e) { log('Wake Lock失敗: ' + e.message); }
-}
-document.addEventListener('visibilitychange', () => {
-  log(`画面状態: ${document.visibilityState}`);
-  if (document.visibilityState === 'visible' && playing) requestWakeLock();
-});
+// ---------- Wake Lock ----------
+let wakeLock=null;
+async function requestWakeLock(){try{if('wakeLock'in navigator)wakeLock=await navigator.wakeLock.request('screen');}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&running)requestWakeLock();});
+
+buildSlots();
 </script>
 </body>
 </html>
