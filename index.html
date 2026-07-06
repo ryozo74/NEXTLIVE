@@ -90,6 +90,11 @@
   <div id="inStat">「入力ON」で許可を求めます（https配信時のみ動作）</div>
   <div class="btnrow" style="margin-top:8px;">
     <button class="hw cyan" id="inputBtn">🎙 入力ON</button>
+    <button class="hw" id="spkBtn">🔊 スピーカーへ</button>
+  </div>
+  <div class="hint" id="spkTip" style="display:none;">
+    音が小さいまま？ iOSがマイク使用中に受話口へ切替えています。①「🔊 スピーカーへ」を押す ②それでも小さければ
+    <b>Bluetooth/USBオーディオIF経由のライン入力</b>にすると通話モードにならず大音量のまま録れます（本命の運用）。
   </div>
 </div>
 
@@ -203,6 +208,8 @@ $('inputBtn').addEventListener('click', async()=>{
     micSource.connect(proc);
     const sink=ctx.createGain(); sink.gain.value=0; proc.connect(sink); sink.connect(ctx.destination); // processor維持用
     proc.onaudioprocess=onAudio;
+    // ★ iOS通話モード回避: 出力を受話口→メインスピーカーへ強制
+    forceSpeaker();
     inputOn=true;
     $('inputBtn').textContent='🎙 入力ON（動作中）'; $('inputBtn').classList.add('on');
     $('inStat').textContent='入力OK。レベルが動くか確認 → BPMを合わせてREC';
@@ -214,6 +221,30 @@ $('inputBtn').addEventListener('click', async()=>{
     log('入力失敗: '+e.name+' '+e.message);
   }
 });
+
+// ---------- iOS通話モード回避: 出力をメインスピーカーへ ----------
+async function forceSpeaker(){
+  let done=[];
+  // 1) AudioContext.setSinkId('speaker') 対応ブラウザ
+  try{
+    if(ctx.setSinkId){ await ctx.setSinkId({type:'none'}).catch(()=>{}); }
+  }catch(e){}
+  try{
+    if(typeof ctx.setSinkId==='function'){ await ctx.setSinkId('speaker'); done.push('ctx.setSinkId(speaker)'); }
+  }catch(e){}
+  // 2) 出力先を列挙して'speaker'系を選ぶ(対応時)
+  try{
+    if(navigator.mediaDevices.enumerateDevices){
+      const ds=await navigator.mediaDevices.enumerateDevices();
+      const sp=ds.find(d=>d.kind==='audiooutput'&&/speaker/i.test(d.label));
+      if(sp&&ctx.setSinkId){ await ctx.setSinkId(sp.deviceId); done.push('sinkId='+sp.label); }
+    }
+  }catch(e){}
+  // 3) AudioContextを一度resumeし直して出力ルートを再取得
+  try{ await ctx.resume(); }catch(e){}
+  log('スピーカー強制: '+(done.length?done.join(', '):'setSinkId非対応 → 下記の手動対策を使用'));
+  $('spkTip').style.display='block';
+}
 
 // ---------- オーディオ処理(レベル計測 + 録音) ----------
 function onAudio(e){
@@ -375,6 +406,7 @@ $('playBtn').addEventListener('click',async()=>{
   }
 });
 $('metBtn').addEventListener('click',()=>{ metOn=!metOn; $('metBtn').classList.toggle('on',metOn); });
+$('spkBtn').addEventListener('click',async()=>{ await ensureCtx(); await forceSpeaker(); log('スピーカーへ再強制'); });
 
 // ---------- TAP↺（小節頭を今にリセット） ----------
 let tapTimes=[];
